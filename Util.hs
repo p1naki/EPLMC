@@ -1,0 +1,160 @@
+-- Original Author: Malvin Gattinger
+-- Set of useful utility functions
+-- Addendum By: Pinaki Chakraborty
+module Util
+(
+    alleq,
+    alleqWith,
+    anydiff,
+    anydiffWith,
+    alldiff,
+    groupSortWith,
+    apply,
+    applyPartial,
+    (!),
+    (!=),
+    powerList,
+    powerSet,
+    restrict,
+    rtc,
+    tc,
+    Rel,
+    Erel,
+    Agent(..),
+    bl,
+    dom,
+    fusion,
+    seteq,
+    subseteq,
+    lfp
+) where
+
+import Data.List ((\\),foldl',groupBy,nub,sort,sortBy,union,all)
+
+type Rel a b = [(a,b)]
+type Erel a = [[a]]
+
+data Agent = Agt Int
+    deriving (Eq,Ord)
+
+instance Show Agent where
+    show (Agt n) = "Agent " ++ show n
+
+-- return True if any element in list is different
+anydiff :: Eq a => [a] -> Bool
+anydiff = anydiffWith id
+
+-- return True if any element in list is different
+-- after applying a specified function
+anydiffWith :: Eq b => (a -> b) -> [a] -> Bool
+anydiffWith _ [] = False
+anydiffWith f (x:xs) = any (f x /=) (map f xs)
+
+-- return True if all values are equal
+alleq  :: Eq a => [a] -> Bool
+alleq = alleqWith id
+
+-- return True if all elements are equal
+-- after applying a specified function
+alleqWith :: Eq b => (a -> b) -> [a] -> Bool
+alleqWith _ [] = True
+alleqWith f (x:xs) = all (f x ==) (map f xs)
+
+
+-- return True if all elements of this list are diferent
+alldiff :: Eq a => [a] -> Bool
+alldiff [] = True
+alldiff (x:xs) = notElem x xs && alldiff xs
+
+
+-- sort a list by groups after applying a function upon it
+groupSortWith :: (Eq a, Ord b) => (a -> b) -> [a] -> [[a]]
+groupSortWith f = groupBy (\ x y -> myCompare x y == EQ) . sortBy myCompare where
+  myCompare x y = compare (f x) (f y)
+
+
+apply :: Show a => Show b => Eq a => Rel a b -> a -> b
+apply rel left = case lookup left rel of
+  Nothing -> error ("apply: Relation " ++ show rel ++ " not defined at " ++ show left)
+  (Just this) -> this
+
+(!) :: Show a => Show b => Eq a => Rel a b -> a -> b
+(!) = apply
+
+applyPartial :: Eq a => [(a,a)] -> a -> a
+applyPartial rel left = case lookup left rel of
+  Nothing     -> left
+  (Just this) -> this
+
+(!=) :: Eq a => [(a,a)] -> a -> a
+(!=) = applyPartial
+
+powerSet :: [a] -> [[a]]
+powerSet []     = [[]]
+powerSet (x:xs) = map (x:) pxs ++ pxs where pxs = powerSet xs
+
+concatRel :: Eq a => Rel a a -> Rel a a -> Rel a a
+concatRel r s = nub [ (x,z) | (x,y) <- r, (w,z) <- s, y == w ]
+
+lfp :: Eq a => (a -> a) -> a -> a
+lfp f x | x == f x  = x
+        | otherwise = lfp f (f x)
+
+dom :: Eq a => Rel a a -> [a]
+dom r = nub (foldr (\ (x,y) -> ([x,y]++)) [] r)
+
+restrict :: Ord a => [a] -> Erel a -> Erel a
+restrict domain =  nub . filter (/= []) . map (filter (`elem` domain))
+
+rtc :: Eq a => Rel a a -> Rel a a
+rtc r = lfp (\ s -> s `union` concatRel r s) [(x,x) | x <- dom r ]
+
+tc :: Eq a => Rel a a -> Rel a a
+tc r = lfp (\ s -> s `union` concatRel r s) r
+
+merge :: Ord a => [a] -> [a] -> [a]
+merge xs [] = xs
+merge [] ys = ys
+merge (x:xs) (y:ys) = case compare x y of
+  EQ -> x : merge xs ys
+  LT -> x : merge xs (y:ys)
+  GT -> y : merge (x:xs) ys
+
+mergeL :: Ord a => [[a]] -> [a]
+mergeL = foldl' merge []
+
+overlap :: Ord a => [a] -> [a] -> Bool
+overlap [] _  = False
+overlap _  [] = False
+overlap (x:xs) (y:ys) = case compare x y of
+  EQ -> True
+  LT -> overlap xs (y:ys)
+  GT -> overlap (x:xs) ys
+
+
+-- bl [[5,4],[3]] 3 = [3]
+-- bl [[5,4],[3]] 4 = [5,4]
+-- bl [[5,4],[3],[2,5]] 5 = [5,4]
+bl :: Eq a => Erel a -> a -> [a]
+bl r x = head (filter (elem x) r)
+
+fusion :: Ord a => [[a]] -> Erel a
+fusion [] = []
+fusion (b:bs) = let
+    cs = filter (overlap b) bs
+    xs = mergeL (b:cs)
+    ds = filter (overlap xs) bs
+  in if cs == ds then xs : fusion (bs \\ cs) else fusion (xs : bs)
+
+-- produces list of powerSets in ascending order
+-- of cardinalty for a list of elements
+powerList  :: [a] -> [[a]]
+powerList  [] = [[]]
+powerList  (x:xs) =
+  powerList xs ++ map (x:) (powerList xs)
+
+seteq :: Ord a => [a] -> [a] -> Bool
+seteq as bs = sort as == sort bs
+
+subseteq :: Eq a => [a] -> [a] -> Bool
+subseteq xs ys = all (`elem` ys) xs
